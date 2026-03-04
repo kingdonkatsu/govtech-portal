@@ -128,19 +128,30 @@ export default function App() {
     void loadJobs();
   }, []);
 
+  const jobsForRoleSelection = useMemo(
+    () =>
+      filters.category === "All"
+        ? jobs
+        : jobs.filter((job) => job.category === filters.category),
+    [jobs, filters.category],
+  );
+
   const levels = useMemo(
-    () => getUniqueSortedCaseInsensitive(jobs.flatMap((job) => extractInclusiveLevels(job.level))),
-    [jobs],
+    () =>
+      getUniqueSortedCaseInsensitive(
+        jobsForRoleSelection.flatMap((job) => extractInclusiveLevels(job.level)),
+      ),
+    [jobsForRoleSelection],
   );
   const periods = useMemo(() => {
     const options = getUniqueSortedCaseInsensitive(
-      jobs.flatMap((job) => extractInclusivePeriods(job.period)),
+      jobsForRoleSelection.flatMap((job) => extractInclusivePeriods(job.period)),
     );
     return sortPeriods(options);
-  }, [jobs]);
+  }, [jobsForRoleSelection]);
   const locations = useMemo(
-    () => getUniqueSorted(jobs.map((job) => job.location)),
-    [jobs],
+    () => getUniqueSorted(jobsForRoleSelection.map((job) => job.location)),
+    [jobsForRoleSelection],
   );
 
   const categoryCounts = useMemo(() => {
@@ -191,6 +202,28 @@ export default function App() {
       return haystack.includes(query);
     });
   }, [jobs, filters]);
+
+  useEffect(() => {
+    setFilters((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      if (current.level !== "All" && !levels.includes(current.level)) {
+        next.level = "All";
+        changed = true;
+      }
+      if (current.period !== "All" && !periods.includes(current.period)) {
+        next.period = "All";
+        changed = true;
+      }
+      if (current.location !== "All" && !locations.includes(current.location)) {
+        next.location = "All";
+        changed = true;
+      }
+
+      return changed ? next : current;
+    });
+  }, [levels, periods, locations]);
 
   return (
     <main className="min-h-screen bg-bg text-text">
