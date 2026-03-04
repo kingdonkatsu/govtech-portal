@@ -18,8 +18,82 @@ function getUniqueSorted(items: string[]): string[] {
   );
 }
 
+function getUniqueSortedCaseInsensitive(items: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+
+  for (const item of items) {
+    const value = item.trim();
+    if (!value) {
+      continue;
+    }
+    const key = value.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(value);
+  }
+
+  return unique.sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" }),
+  );
+}
+
 function normalize(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function cleanToken(value: string): string {
+  return value.replace(/\s+/g, " ").replace(/^[-*•]\s*/, "").trim();
+}
+
+function splitInclusiveValues(value: string): string[] {
+  if (!value.trim()) {
+    return [];
+  }
+
+  return value
+    .split(/\n|[;,/|]/g)
+    .flatMap((part) => part.split(/\b(?:and|or)\b/gi))
+    .map(cleanToken)
+    .filter(Boolean);
+}
+
+function normalizePeriodToken(value: string): string {
+  const monthMatch = value.match(/(\d+)\s*(month|months)/i);
+  if (monthMatch) {
+    const monthCount = Number(monthMatch[1]);
+    return `${monthCount} ${monthCount === 1 ? "month" : "months"}`;
+  }
+  return cleanToken(value);
+}
+
+function extractInclusivePeriods(period: string): string[] {
+  const monthMatches = period.match(/\d+\s*(?:month|months)/gi);
+  const tokens =
+    monthMatches?.map((match) => normalizePeriodToken(match)) ??
+    splitInclusiveValues(period).map((token) => normalizePeriodToken(token));
+  return getUniqueSortedCaseInsensitive(tokens);
+}
+
+function extractInclusiveLevels(level: string): string[] {
+  return getUniqueSortedCaseInsensitive(splitInclusiveValues(level));
+}
+
+function sortPeriods(values: string[]): string[] {
+  return [...values].sort((a, b) => {
+    const aMatch = a.match(/^(\d+)/);
+    const bMatch = b.match(/^(\d+)/);
+    const aMonths = aMatch ? Number(aMatch[1]) : Number.POSITIVE_INFINITY;
+    const bMonths = bMatch ? Number(bMatch[1]) : Number.POSITIVE_INFINITY;
+
+    if (aMonths !== bMonths) {
+      return aMonths - bMonths;
+    }
+
+    return a.localeCompare(b, undefined, { sensitivity: "base" });
+  });
 }
 
 export default function App() {
@@ -54,11 +128,16 @@ export default function App() {
     void loadJobs();
   }, []);
 
-  const levels = useMemo(() => getUniqueSorted(jobs.map((job) => job.level)), [jobs]);
-  const periods = useMemo(
-    () => getUniqueSorted(jobs.map((job) => job.period)),
+  const levels = useMemo(
+    () => getUniqueSortedCaseInsensitive(jobs.flatMap((job) => extractInclusiveLevels(job.level))),
     [jobs],
   );
+  const periods = useMemo(() => {
+    const options = getUniqueSortedCaseInsensitive(
+      jobs.flatMap((job) => extractInclusivePeriods(job.period)),
+    );
+    return sortPeriods(options);
+  }, [jobs]);
   const locations = useMemo(
     () => getUniqueSorted(jobs.map((job) => job.location)),
     [jobs],
@@ -77,11 +156,21 @@ export default function App() {
       if (filters.category !== "All" && job.category !== filters.category) {
         return false;
       }
-      if (filters.level !== "All" && job.level !== filters.level) {
-        return false;
+      if (filters.level !== "All") {
+        const levelMatches = extractInclusiveLevels(job.level).some(
+          (value) => normalize(value) === normalize(filters.level),
+        );
+        if (!levelMatches) {
+          return false;
+        }
       }
-      if (filters.period !== "All" && job.period !== filters.period) {
-        return false;
+      if (filters.period !== "All") {
+        const periodMatches = extractInclusivePeriods(job.period).some(
+          (value) => normalize(value) === normalize(filters.period),
+        );
+        if (!periodMatches) {
+          return false;
+        }
       }
       if (filters.location !== "All" && job.location !== filters.location) {
         return false;
